@@ -1,0 +1,1341 @@
+h1. Setup Java Project with ANT GIT in Eclipse
+
+{toc}
+
+# create new java project 
+# organize source code into standard src,test,doc folder
+# write built script (ant)
+# put code into repository (git)
+# ev. integrate code into your CI configuration (det up safety net)
+# write test simulating how you need to use software
+# Add found issues to buck tracker..
+
+h2. Eclipse Project Structure Template
+
+*Project:* Name
+
+* *src* folder sorting project source files
+* *test* folder (right click select in context menu "use as Source Folder")
+* *demo* folder optional to demonstrate the usage of code in the _src_ folder
+* *doc* folder storing java doc
+* *lib* storing the extra libraries
+* *resources* folder storing project resource files
+* *project* storing all project- and building related files
+** *help* storing the help files for the source code eg. written in _.textile_
+** *template* storing application templates for different platforms such as windows or osx
+** *lib* storing libraries and software needed for building and testing
+** *design* storing source images eg. photoshop or illustrator files
+** *wiki* with project related documents and notes
+* _build.xml_ main build file for the project
+* _build.properties_ storing the project specific build variables.
+* *{background-color:#CCC}build* contains all compiled classes, tests and software resources. The folder is built/deleted dynamically by the ant _build.xml_ file.
+* *{background-color:#CCC}dist* contains the final distribution eg. windows, osx executable or installers. The folder is built/deleted dynamically by the ant _build.xml_ file.
+
+*Project Properties:*
+
+* add JUnit in java built path (Libraries - add Library) for testing
+
+h2. ANT Build script _build.xml_
+
+ANT is a java library and command line tool to create _build files_ and simplify its process structured into different targets that can be independently run.
+Each file starts with a project tag @<project name="my-name" default="compile">@ with its name as a description and a default target to execute.
+It helps for the building process to create dynamically the following folders:
+
+*build* folder: for the compiled files,tests and documentation and reports
+*dist* folder: for the created distributions
+
+The ANT _build.xml_ therefore creates and cleans this folders if requested and all persistent files needed to build the application should reside in other folders.
+
+Variables can be defined as properties in the following manner, as key-value pair @<property name="my-key" value="99999"/>@, or key-location pair @<property name="my-key" location="this/sub/folder"/>@ for paths relative to the location of the ANT file. Helpful to write a generic file for the different target and different projects. The properties of a project can then be stored in a separate _build.properties_ file as key-value pairs and called @<property file="build.properties" />@. A property value is accessed in the following manner @${key}@.
+
+*Ant Resources*: 
+
+* "Apache Ant(TM)":http://ant.apache.org/
+* "Apache Ant - Manual":http://ant.apache.org/manual/index.html
+* "Apache Ant - Tutorials":http://ant.apache.org/manual/tutorials.html
+* "Apache Ant - Hello World":http://ant.apache.org/manual/tutorial-HelloWorldWithAnt.html
+* "Apache Ant - Tutorial":http://www.vogella.com/articles/ApacheAnt/article.html
+ 
+h3. ANT build.properties file
+
+A example properties file _build.properties_. Points in key name are often used to indicate subfolders.
+
+bc. application=MyApplication
+branding= 0.7 Beta Version 
+builder=3.14a
+copyright=copyright 3.14a &copy; 2013
+language=English
+revision=0.7.0.1
+version=0.7
+main-class=myPackage.MyApp
+src=src
+lib=lib
+test=test
+build=build
+build.classes=build/classes
+build.data=build/data
+build.debug=build/debug
+build.javadoc=build/javadoc
+build.reports=build/reports
+build.test=build/test
+dist=dist
+dist.jar=dist/jar
+dist.osx=dist/osx
+dist.windows=dist/windows
+template=project/template
+template.doc=project/template/doc
+template.osx=project/template/osx
+template.windows=project/template/windows
+help.src=project/help
+lib.build=project/lib
+resources=resources
+
+h3. Basic ANT build file
+
+A sample build file with the tasks _init_,_clean_,_compile_,_build_,_jar_ and _run_. As projects often include further libraries, they have to be referenced in the jar manifest file to find the respective location of the libraries. There are possibilities to include them all into one jar but that approach didn't really work out nicely.
+
+bc. <project name="buildApp" default="jar">
+	<property file="build.properties" />
+	<path id="jar-classpath">
+		<fileset dir="${lib}">
+			<include name="**/*.jar" />
+		</fileset>
+	</path>	
+	<target name="init" description="Creates the needed directories.">
+	    <mkdir dir="${build.classes}"/>
+	    <mkdir dir="${dist}"/>
+	</target>	
+	<target name="clean" description="Cleans up the build and dist directories.">
+	    <delete dir="${build}"/>
+	    <delete dir="${dist}"/>
+	</target>	
+	<target name="copy-non-java-files">
+		<copy todir="${build.classes}" includeemptydirs="false">
+			<fileset dir="src" excludes="**/*.java" />
+		</copy>
+	</target>	
+	<target name="compile" depends="init,copy-non-java-files" description="Compiles the source files.">
+		<javac destdir="${build.classes}" debug="${build.debug}" includeAntRuntime="yes" srcdir="${src}">
+			<classpath refid="jar-classpath" />
+		</javac>
+	</target>	
+	<target name="jar" depends="compile">
+		<!-- create executable jar base folder and copy all the libraries relative to the final jar -->
+		<mkdir dir="${dist.jar}" />
+		<copy todir="${dist.jar}/${lib}" includeemptydirs="false">
+			<fileset dir="${lib}" includes="**/*.jar" />
+		</copy>
+		<!-- copy resources folder to the executable jar base folder -->
+		<copy todir="${dist.jar}/${resources}" includeemptydirs="false">
+			<fileset dir="${resources}" includes="**/*" />
+		</copy>
+		<!-- create classpaths for the copied lib folder to be referenced in the manifest of the jar file -->
+		<path id="dist.lib">
+			<fileset dir="${dist.jar}/${lib}">
+				<include name="**/*.jar" />
+			</fileset>
+		</path>
+		<!-- convert the classpath into a space separated list to set the manifest Class-Path attribute -->
+		<manifestclasspath property="lib.list" jarfile="${dist.jar}/${application}.jar">
+			<classpath refid="dist.lib" />
+		</manifestclasspath>
+		<!-- build the jar in the jar base folder -->
+		<jar jarfile="${dist.jar}/${application}.jar">
+			<fileset dir="${build.classes}" />
+			<manifest>
+				<attribute name="Built-By" value="${builder}" />
+				<attribute name="Built-On" value="${build-info.current-date}" />
+				<attribute name="Built-At" value="${build-info.current-time}" />
+				<attribute name="Implementation-Version" value="${version}" />
+				<attribute name="Main-Class" value="${main-class}" />
+				<attribute name="Class-Path" value=". ${lib.list}" />
+			</manifest>
+		</jar>
+	</target>
+	<target name="run" description="Run program with parameters (it's not just compiling)">
+		<java fork="true" jar="${dist.jar}/${application}.jar" />
+	</target>	
+</project>
+
+h3. ANT JavaDoc build 
+
+The following code examples shows how to build Javadoc files with ANT, based on the above Basic ANT build file and the _build.properties_. In _packagenames_ one can specify a comma-separated list of packages and its stored code. eg. @packagenames="package.*,special.*"@
+*Project location:* @${build.javadoc}@
+
+bc. <target name="javadoc" depends="compile" description="Generates java docs for ${application} in folder:${doc}">
+	<javadoc packagenames="package.*,special.*" sourcepath="${src}" destdir="${build.javadoc}" windowtitle="${application} Documentation" />
+</target>
+
+h3. ANT Test build 
+
+Based on the same folder setup and _build.properties_ file the following ANT targets show how tests can be build, with xml outputs and reports. The test folders are held seperate from the source code folder _src_ to have a distinct division between the tests and the actual code of the project, which simplifies also the build process. The "JUnit":http://junit.org/ folder needs to be referenced in the test-classpath and is stored in the project build library folder seperatly from the libraries needed for the project @<fileset dir="${lib.build}/junit" includes="**/*.jar" />@.  
+"JUnit":http://junit.org/, "Download Site":https://github.com/junit-team/junit/wiki/Download-and-Install). JUnit4 keeps does not include the harmcrest-core library which needs to be referenced seperately. Here "hamcrest-core-1.3.jar":http://search.maven.org/remotecontent?filepath=org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar and "junit-4.11.jar":http://search.maven.org/remotecontent?filepath=junit/junit/4.11/junit-4.11.jar were used, stored in the _${lib.build}/junit_ folder. The test data and reports are stored in the build subfolders _build/test_, _build/data_, _build/reports_.
+
+*Additional Software and librariers*:
+*Website:* "JUnit":http://junit.org/
+*Downloaded:* "hamcrest-core-1.3.jar":http://search.maven.org/remotecontent?filepath=org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar,  "junit-4.11.jar":http://search.maven.org/remotecontent?filepath=junit/junit/4.11/junit-4.11.jar
+*Project location:* @${lib.build}/junit@
+
+bc. <path id="test-classpath">
+	<path refid="jar-classpath" />
+	<pathelement location="${build.classes}" />
+	<pathelement location="${build.test}" />
+	<fileset dir="${lib.build}/junit" includes="**/*.jar" />
+</path>
+<target name="test-compile" depends="compile">
+	<delete dir="${build.data}" />
+	<delete dir="${build.reports}" />
+	<mkdir dir="${build.data}" />
+	<mkdir dir="${build.reports}" />
+	<mkdir dir="${build.test}" />
+	<copy todir="${build.test}">
+		<fileset dir="test" excludes="**/*.java" />
+	</copy>
+	<javac destdir="${build.test}" debug="${build.debug}" includeAntRuntime="true" srcdir="${test}">
+		<classpath refid="test-classpath" />
+	</javac>
+</target>
+<target name="test" depends="test-compile">
+	<junit printsummary="yes" haltonfailure="false">
+		<classpath refid="test-classpath" />
+		<formatter type="brief" usefile="no" />
+		<formatter type="xml" usefile="yes" />
+		<batchtest todir="${build.data}">
+			<fileset dir="${build.test}" includes="**/*Test*.class" />
+		</batchtest>
+	</junit>
+</target>
+<target name="report" description="Create a report for the rest result">
+	<junitreport todir="${build.data}">
+		<fileset dir="${build.data}">
+			<include name="*.xml" />
+		</fileset>
+		<report format="frames" todir="${build.reports}" />
+	</junitreport>
+</target>
+<target name="testreport" depends="test,report" description="Runs unit tests and creates a report" />
+
+h3. ANT Help files build
+
+Help files can be easily created using the wikitext editor within eclipse. WikiText provides a wiki text editor for Eclipse and Ant tasks for converting lightweight markup to HTML and other formats. Stored in the ${help.src} ANT with the help of the wikitext standalone package compiles these files to _html_, _eclipse help_, or _docbook_ files. In this example _.textile_ is used as a markup, other markup languages such as _.confluence_, _MediaWiki_, _TWiki_ or _TracWiki_ are supported by WikiText. Stylesheet inclusion as a reference @<stylesheet url="${help.src}/styles/main.css" />@ and @<stylesheet file="${help.src}/styles/main.css" />@  included as a style attribute in the header of the html to get a standalone help file.
+
+*Additional Software and librariers*:
+*Website:* Mylyn "Wikitext Standalone":http://www.eclipse.org/mylyn/downloads/ select Download WikiText Standalone (latest)
+*Project location:* @${lib.build}/wikitext-standalone@
+*Help folder* property key: @${help.src}@
+
+* styles/main.css
+* help.textile
+
+In the _include-help_ target html help files are copied to the template doc folder to be later included in the software distribution.
+
+bc. <property name="wikitext.standalone" location="${lib.build}/wikitext-standalone" />
+<!-- path to wikitext standalone package -->
+<path id="wikitext.classpath">
+	<fileset dir="${wikitext.standalone}">
+		<include name="org.eclipse.mylyn.wikitext.*core*.jar" />
+	</fileset>
+</path>
+<taskdef classpathref="wikitext.classpath" resource="org/eclipse/mylyn/wikitext/core/util/anttask/tasks.properties" />
+<target name="generate-help" depends="init" description="Generate Eclipse help from textile source">
+	<wikitext-to-eclipse-help markupLanguage="Textile" multipleOutputFiles="true" navigationImages="true" helpPrefix="help">
+		<fileset dir="${help.src}">
+			<include name="*.textile" />
+		</fileset>
+		<stylesheet file="${help.src}/styles/main.css" />
+	</wikitext-to-eclipse-help>
+	<!-- hack for &#xd; xml trouble bug or so -->
+	<replace dir="${help.src}" includes="*.html">
+		<replacefilter token="&#xd;" value="" />
+	</replace>
+</target>
+<target name="generate-html" depends="init" description="Generate HTML from textile source">
+	<wikitext-to-html markupLanguage="Textile">
+		<fileset dir="${help.src}">
+			<include name="*.textile" />
+		</fileset>
+		<stylesheet file="${help.src}/styles/main.css" />
+	</wikitext-to-html>
+	<!-- hack for &#xd; xml trouble bug or so -->
+	<replace dir="${help.src}" includes="*.html">
+		<replacefilter token="&#xd;" value="" />
+	</replace>
+</target>
+<target name="generate-docbook" depends="init" description="Generate HTML from textile source">
+	<wikitext-to-docbook markupLanguage="Textile">
+		<fileset dir="${help.src}">
+			<include name="**/*.textile" />
+		</fileset>
+	</wikitext-to-docbook>
+</target>
+<target name="generate-pdf" description="Generate PDF from textile">
+	<wikitext-to-pdf markupLanguage="Textile">
+		<fileset dir="${help.src}">
+			<include name="**/*.textile" />
+		</fileset>
+	</wikitext-to-pdf>
+</target>
+<target name="include-help" depends="generate-help" description="include help to template folder">
+	<copy todir="${template.doc}" includeemptydirs="false">
+		<fileset dir="${help.src}" excludes="**/*.textile" />
+	</copy>
+</target>
+
+h3. ANT Windows build
+
+How to build windows executable with ANT and launch4j.
+
+# Download "launch4j":http://launch4j.sourceforge.net/ and store it in _project/lib/launch4j_ 
+# Copy the following files to the windows template folder: 
+** *WindowsApp.xml* see subsection launch4j configuration file.
+** *application.ico* (for creation use: IconFX ( "portable":http://portableapps.com/apps/graphics_pictures/icofx_portable )
+** *splash.bmp* (if referenced in the WindowsApp.xml the launch4j settings.) Has to be a bmp file, save a jpg or png as bmp file in Windows Pain works well.
+# Run the ANT task, that performs the following steps:
+## Copy all the files in @${dist.jar}@ (application jar file, libraries and resources) to the @${dist.windows}@ folder
+## Copy the application documents from @${template.doc}@ to the @${dist.windows}@ folder
+## Copy the WindowsApp.xml, application.ico, splash.bmp from @${template.windows}@ to the @${dist.windows}@ folder
+## Replaces the APPJAR, APPEXE, APPMUTEXNAME and APPWINDOWTITLE with the respective values in lauch4j configuration file _WindowsApp.xml_
+## references and runs launch4j @<launch4j configFile="${dist.windows}/WindowsApp.xml" jar="${dist.jar}/${application}.jar" outfile="${dist.windows}/${application}.exe" />@
+## and deletes files copied from the windows template folder.
+
+*Additional Software and librariers*:
+*Website:* "launch4j":http://launch4j.sourceforge.net/docs.html [ "launch4j-3.1.0-beta1-win32.zip":http://sourceforge.net/projects/launch4j/files/launch4j-3/3.1.0-beta1/ ]
+*Folders*: within project folder
+
+* *lib*
+** *launch4j* property key: @${lib.build}/launch4j/@ 
+* *template* 
+** *Windows* property key: @${template.windows}@ containing all the files relevant to build an windows executable.
+** *doc* application documentation (see section ANT Help files)
+
+h4. Launch4j Config file
+
+The launch4j configuration file is stored in the windows template folder @${template.windows}@
+The following variables in capital letters  are replaced by ANT @<replace dir="${dist.windows}" includes="WindowsApp.xml">@  
+
+*APPJAR*: will be replaced by the name of the jar file @${application}.jar@
+*APPEXE*: will be replaced by the name of the executable file @${application}.exe@
+*APPMUTEXNAME*: is replaced by the application name @${application}@
+*APPWINDOWTITLE*: is replaced by the application name @${application}@
+
+bc. <launch4jConfig>
+  <dontWrapJar>false</dontWrapJar>
+  <headerType>gui</headerType>
+  <jar>APPJAR</jar>
+  <outfile>APPEXE</outfile>
+  <errTitle></errTitle>
+  <cmdLine></cmdLine>
+  <chdir></chdir>
+  <priority>normal</priority>
+  <downloadUrl>http://java.com/download</downloadUrl>
+  <supportUrl></supportUrl>
+  <customProcName>false</customProcName>
+  <stayAlive>false</stayAlive>
+  <manifest></manifest>
+  <icon>application.ico</icon>
+  <singleInstance>
+    <mutexName>APPMUTEXNAME</mutexName>
+    <windowTitle>APPWINDOWTITLE</windowTitle>
+  </singleInstance>
+  <jre>
+    <path></path>
+    <minVersion>1.6.0</minVersion>
+    <maxVersion></maxVersion>
+    <jdkPreference>preferJre</jdkPreference>
+  </jre>
+  <splash>
+    <file>splash.bmp</file>
+    <waitForWindow>true</waitForWindow>
+    <timeout>60</timeout>
+    <timeoutErr>false</timeoutErr>
+  </splash>
+</launch4jConfig>
+
+h4. Task windows-build
+
+The target @windows-build@ creates within the windows distribution folder the windows application and copies the relevant files to run the application into that folder. The targets @windows-zip@ and @windows-tar@ compress the @dist.windows@ folder to zip and tar files.
+
+bc. <target name="windows-build" depends="jar">
+	<delete dir="${dist.windows}" />
+	<mkdir dir="${dist.windows}" />
+	<!-- copy all files needed for the build to the build work folder -->
+	<copy todir="${dist.windows}/${lib}">
+		<fileset dir="${dist.jar}/${lib}" />
+	</copy>
+	<copy todir="${dist.windows}/${resources}">
+		<fileset dir="${dist.jar}/${resources}" />
+	</copy>
+	<copy todir="${dist.windows}">
+		<fileset dir="${template.doc}/" />
+	</copy>
+	<copy file="${template.windows}/WindowsApp.xml" todir="${dist.windows}" />
+	<copy file="${template.windows}/application.ico" todir="${dist.windows}" />
+	<copy file="${template.windows}/splash.bmp" todir="${dist.windows}" />
+	<!-- edit WindowsApp.xml -->
+	<replace dir="${dist.windows}" includes="WindowsApp.xml">
+		<replacefilter token="APPJAR" value="${application}.jar" />
+		<replacefilter token="APPEXE" value="${application}.exe" />
+		<replacefilter token="APPMUTEXNAME" value="${application}" />
+		<replacefilter token="APPWINDOWTITLE" value="${application}" />
+	</replace>
+	<taskdef name="launch4j" classname="net.sf.launch4j.ant.Launch4jTask" classpath="${lib.build}/launch4j/launch4j.jar:${lib.build}/launch4j/lib/xstream.jar" />
+	<launch4j configFile="${dist.windows}/WindowsApp.xml" jar="${dist.jar}/${application}.jar" outfile="${dist.windows}/${application}.exe" />
+	<delete file="${dist.windows}/application.ico" />
+	<delete file="${dist.windows}/WindowsApp.xml" />
+	<delete file="${dist.windows}/splash.bmp" />
+</target>
+<target name="windows-zip" depends="windows-build" description="Create windows zip">
+	<zip destfile="${dist}/${application}-Windows-${version}.zip" basedir="${dist.windows}" />
+</target>
+<target name="windows-tar" depends="windows-zip" description="Create windows tar">
+	<tar destfile="${dist}/${application}-Windows-${version}.tar.gz" compression="gzip">
+		<zipfileset src="${dist}/${application}-Windows-${version}.zip" />
+	</tar>
+</target>
+	
+h3. ANT Windows Portable Apps build
+
+The @portable-app@ target depends on the @windows-build@ and requires a folder structure according to the "PortableApps format":http://portableapps.com/development/portableapps.com_format definition. Furthermore NSISPortable, PortableLauncher and PortableInstaller are required and stored in the project library folders respectively @${lib.build}@.
+
+*Portable Apps Resources*:
+
+* "Launch4j Portable Apps":http://www.informit.com/guides/content.aspx?g=java&seqNum=361
+* "PortableApps.com":http://portableapps.com/
+* "PortableApps.com Format":http://portableapps.com/development/portableapps.com_format
+
+*Required*: and stored in @${lib.build}@
+
+* "NSISPortable":http://portableapps.com/apps/development/nsis_portable
+* "PortableLauncher":http://portableapps.com/apps/development/portableapps.com_launcher
+* "PortableInstaller":http://portableapps.com/apps/development/portableapps.com_installer
+
+The following files need to be created appinfo.ini,installer.ini,AppNamePortable.ini and are stored in the @$${template}/portableApp@ folder.
+
+*portableApp* Folder structure below needs to be applied to create a portableApps compatible application
+
+* App
+** AppInfo
+*** Launcher
+**** AppNamePortable.ini
+**** splash.jpg
+*** appinfo.ini
+*** installer.ini
+*** appicon.ico
+*** appicon_16.png
+*** appicon_64.png
+*** appicon_128.png
+* Data
+* Other
+
+h4. appinfo.ini
+
+During the @portable-app@ tasks the following words starting with APP* will be replaced. Therefore no further change need to be done.
+
+bc. [Format]
+Type=PortableApps.comFormat
+Version=3.0
+[Details]
+Name=APPNAME Portable
+AppID=APPNAMEPortable
+Publisher=${copyright} &amp; PortableApps.com
+Homepage=APPHOMEPAGE
+Category=APPCATEGORY
+Description=APPDESCRIPTION
+Language=APPLANGUAGE
+[License]
+Shareable=true
+OpenSource=true
+Freeware=true
+CommercialUse=true
+EULAVersion=1
+[Version]
+PackageVersion=APPREVISION
+DisplayVersion=APPVERSION
+[Control]
+Icons=1
+Start=APPNAMEPortable.exe
+Start1=APPNAMEPortable.exe
+Name1=APPNAME Portable
+
+h4. AppNamePortable.ini
+
+AppNamePortable.ini file needed for the "PortableLauncher":http://portableapps.com/apps/development/portableapps.com_launcher. During the @portable-app@ tasks the following words starting with APP* will be replaced. Therefore no further change need to be done. Unless a different configuration for the application is needed. 
+
+bc. 
+[Launch]
+ProgramExecutable=APPEXE
+LaunchAppAfterSplash=true
+SplashTime=1000
+WorkingDirectory=%PAL:AppDir%\APPNAME
+[Activate]
+Registry=true
+[Details]
+Name=APPNAME Portable
+AppID=APPNAMEPortable
+Publisher=APPCOPYRIGHT & PortableApps.com
+Homepage=APPHOMEPAGE
+Category=APPCATEGORY
+Description=APPDESCRIPTION
+[Control]
+Icons=1
+Start=APPNAMEPortable.exe
+		
+h4. installer.ini
+
+installer.ini file needed for the "PortableInstaller":http://portableapps.com/apps/development/portableapps.com_installer
+
+bc. [Source]
+IncludeInstallerSource=true
+
+h4. Task portable-app
+
+How to build a PortableApp.
+
+# Download the required portable tools provided by PortableApps and store them in ${lib.build}:
+
+* "NSISPortable":http://portableapps.com/apps/development/nsis_portable
+* "PortableLauncher":http://portableapps.com/apps/development/portableapps.com_launcher
+* "PortableInstaller":http://portableapps.com/apps/development/portableapps.com_installer
+
+# Create the *PortableApp* folder structure according to the "PortableApps format":http://portableapps.com/development/portableapps.com_format
+# Include the appinfo.ini, installer.ini, AppNamePortable.ini at there respective locations, as well as the icon files.
+# run the @portable-app@ ANT task, conducting the following steps:
+## Creates the @${dist}/${application}Portable@ folder
+## Copy PortableApp template folder @${template}/portableApp@ to @{application}Portable@ folder.
+## Copy all the files in @${dist.windows}@ (windows application folder with all the relevant data) to the @${dist}/${application}Portable/App/${application}@ folder
+## Copy the application help files from @${template.doc}/help.html@ to the @${dist}/${application}Portable/help.html@ folder
+## Replaces the APP* variables with the respective values in the appinfo.ini file
+## Replaces the APP* variables with the respective values in the AppNamePortable.ini file
+## Execute the PortableApps.comLauncher
+## Execute the PortableApps.comInstaller
+
+bc. <target name="portable-app" depends="windows-build" description="Create portable app www.portableapps.com">
+		<property name="homepage" value="http://3.14a.ch" />
+		<property name="description" value="Portable development build for ${application}" />
+		<property name="category" value="Development" />
+		<delete dir="${dist}/${application}Portable" />
+		<mkdir dir="${dist}/${application}Portable" />
+		<!-- copy portable app template to portable app dir -->
+		<copy todir="${dist}/${application}Portable/">
+			<fileset dir="${template}/portableApp" />
+		</copy>
+		<!-- copy application to portable app dir -->
+		<copy todir="${dist}/${application}Portable/App/${application}">
+			<fileset dir="${dist.windows}" />
+		</copy>
+		<!-- copy help files to portable app dir -->
+		<copy file="${template.doc}/help.html" tofile="${dist}/${application}Portable/help.html" />
+		<!-- replace settings in the appinfo.ini file  -->
+		<replace dir="${dist}/${application}Portable/App/AppInfo/" includes="appinfo.ini">
+			<replacefilter token="APPNAME" value="${application}" />
+			<replacefilter token="APPHOMEPAGE" value="${homepage}" />
+			<replacefilter token="APPDESCRIPTION" value="${description}" />
+			<replacefilter token="APPCATEGORY" value="${category}" />
+			<replacefilter token="APPLANGUAGE" value="${language}" />
+			<replacefilter token="APPREVISION" value="${revision}" />
+			<replacefilter token="APPVERSION" value="${version}" />
+		</replace>
+		<!-- replace settings in the launcher APPNAMEPortable.ini file  -->
+		<move file="${dist}/${application}Portable/App/AppInfo/Launcher/AppNamePortable.ini" tofile="${dist}/${application}Portable/App/AppInfo/Launcher/${application}Portable.ini" />
+		<replace dir="${dist}/${application}Portable/App/AppInfo/Launcher" includes="${application}Portable.ini">
+			<replacefilter token="APPEXE" value="${application}/${application}.exe" />
+			<replacefilter token="APPNAME" value="${application}" />
+			<replacefilter token="APPHOMEPAGE" value="${homepage}" />
+			<replacefilter token="APPDESCRIPTION" value="${description}" />
+			<replacefilter token="APPCATEGORY" value="${category}" />
+			<replacefilter token="APPLANGUAGE" value="${language}" />
+		</replace>
+		<!-- exec portableApps launcher http://portableapps.com/apps/development/portableapps.com_launcher -->
+		<exec executable="${lib.build}/PortableApps.comLauncher/PortableApps.comLauncherGenerator.exe" />
+		<!-- exec portableApps installer http://portableapps.com/apps/development/portableapps.com_installer -->
+		<exec executable="${lib.build}/PortableApps.comInstaller/PortableApps.comInstaller.exe" />
+	</target>
+
+h3. ANT Windows Installer NSIS
+
+Nullsoft Scriptable Install System (NSIS) allows to build comfortable windows installer that can easily be distributed and allow the user comfortable installation of the application including registry settings, optional components, desktop shortcuts and the inclusion in to the startmenu.
+
+How to build a NSIS installer:
+
+# Download the required portable tools provided by NSIS and store them in ${lib.build}:"NSISPortable":http://portableapps.com/apps/development/nsis_portable
+# Create a NSIS template folder @${template}/nsis@ with the following content:
+** installer.nsi the NSIS install script
+** application.ico
+** header.bmp 150x57 pixels (or a provided one stored in _NSISPortable\App\NSIS\Contrib\Graphics\Header_)
+** wizard.bmp 164x314 pixels (or a provided one stored in _NSISPortable\App\NSIS\Contrib\Graphics\Wizard_)
+** License.txt storing the License file the user has to agree before installing the application
+# run the @windows-nsis@ ANT task, conducting the following steps:
+## Creates the @${dist}/${application}Installer@ folder
+## Copy PortableApp template folder @${template}/nsis@ to @${dist}/${application}Installer@ folder.
+## Copy all the files in @${dist.windows}@ (windows application folder with all the relevant data) to the @$${dist}/${application}Installer/App@ folder
+## Execute NSIS @<exec executable="${lib.build}/NSISPortable/App/NSIS/makensis.exe" dir="${dist}/${application}Installer" failonerror="true">@ and pass the required values defined in the NSIS script eg.@<arg value="/DNAME=${application}" />@ and the script location itself @<arg value="installer.nsi" />@
+## Remove the installer folder @${dist}/${application}Installer@
+
+
+h4. NSIS Script for Users with User execution level (no UAC needed)
+
+Tutorial: "Simple NSIS installer script":http://www.klopfenstein.net/lorenz.aspx/simple-nsis-installer-with-user-execution-level
+
+bc. # General Settings
+Name "${NAME}"
+InstallDir "$LOCALAPPDATA\${NAME}"
+OutFile "..\${NAME}-Setup-User.exe"
+; standard program launched by the user with references to common folders (like “%USERPROFILE%”) 
+; redirection to the current user's folder under C:\Users (not the Administrator).
+; eg: C:\Users\USER\AppData\Local\Application Name
+RequestExecutionLevel user
+BrandingText "${NAME} - ${BRANDING}"
+Caption "${NAME}"
+VIProductVersion "${VERSION}"
+VIAddVersionKey ProductName "${NAME}"
+VIAddVersionKey Comments "For additional details, visit ${WEBSITE}"
+VIAddVersionKey CompanyName "${COMPANY}"
+VIAddVersionKey LegalCopyright "${BUILDER}"
+VIAddVersionKey FileDescription "${NAME}"
+VIAddVersionKey FileVersion "${VERSION}"
+VIAddVersionKey ProductVersion "${VERSION}"
+VIAddVersionKey InternalName "${NAME}"
+VIAddVersionKey LegalTrademarks "${TRADEMARK}"
+VIAddVersionKey OriginalFilename "${EXENAME}"		
+# Include libraries
+!include "MUI2.nsh"
+#Variables
+Var StartMenuFolder
+#Interface Settings
+!define MUI_ABORTWARNING  
+!define MUI_HEADERIMAGE
+!define MUI_HEADERIMAGE_BITMAP "header.bmp" ; optional
+!define MUI_WELCOMEFINISHPAGE_BITMAP "wizard.bmp" ; optional
+!define MUI_UNWELCOMEFINISHPAGE_BITMAP "wizard.bmp" ; optional
+!define MUI_ICON "application.ico"
+!define MUI_UNICON "application.ico"
+#Pages
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_LICENSE "License.txt"
+!insertmacro MUI_PAGE_COMPONENTS
+!insertmacro MUI_PAGE_DIRECTORY
+;Start Menu Folder Page Configuration
+!define MUI_STARTMENUPAGE_REGISTRY_ROOT "HKCU" 
+!define MUI_STARTMENUPAGE_REGISTRY_KEY "Software\${NAME}" 
+!define MUI_STARTMENUPAGE_REGISTRY_VALUENAME "Start Menu Folder"
+!insertmacro MUI_PAGE_STARTMENU Application $StartMenuFolder  
+!insertmacro MUI_PAGE_INSTFILES
+!define MUI_FINISHPAGE_LINK "Visit ${NAME} at ${WEBSITE} for News, FAQs and Support."
+!define MUI_FINISHPAGE_LINK_LOCATION "${WEBSITE}"
+!define MUI_FINISHPAGE_SHOWREADME "$INSTDIR\README.txt"
+!define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
+!define MUI_FINISHPAGE_RUN  "$INSTDIR\${NAME}.exe" 
+!define MUI_FINISHPAGE_RUN_NOTCHECKED
+!insertmacro MUI_PAGE_FINISH  
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+!insertmacro MUI_UNPAGE_FINISH
+#Languages 
+!insertmacro MUI_LANGUAGE "English"
+!insertmacro MUI_LANGUAGE "German"
+#################################
+# Installer Sections
+!include "FileFunc.nsh"
+!define REG_UNINSTALL "Software\Microsoft\Windows\CurrentVersion\Uninstall\${NAME}"
+Section "Main application (Required)"  SecRequired
+	SectionIn RO
+	SetOutPath "$INSTDIR"	 
+	File /r "${APPPATH}\lib"
+	File /r /x plugins /x data ${APPPATH}\resources 
+	File "${APPPATH}\*"
+	File "application.ico"  
+    ;Store installation folder
+	WriteRegStr HKCU "Software\${NAME}" "" $INSTDIR  
+	SetShellVarContext current ; startmenu reference for the current user
+	; Start menu for Users $STARTMENU [for all: $SMPROGRAMS]
+	; C:\Users\USER\AppData\Roaming\Microsoft\Windows\Start Menu
+	!insertmacro MUI_STARTMENU_WRITE_BEGIN Application   
+	CreateDirectory "$STARTMENU\Programs\${NAME}"
+	CreateShortCut "$STARTMENU\Programs\${NAME}\${NAME}.lnk" "$INSTDIR\${EXENAME}"
+	CreateShortCut "$STARTMENU\Programs\${NAME}\Uninstall ${NAME}.lnk" "$INSTDIR\Uninstall.exe"
+	CreateShortCut "$STARTMENU\Programs\${NAME}\README.lnk" "notepad.exe" "$INSTDIR\README.txt"
+	CreateShortCut "$STARTMENU\Programs\${NAME}\${NAME} Help.lnk" "$INSTDIR\help.html" 
+	!insertmacro MUI_STARTMENU_WRITE_END 
+	;Create desktop shortcut
+	CreateShortCut "$DESKTOP\${NAME}.lnk" "$INSTDIR\${NAME}.exe" ""
+  	;Create uninstaller
+	WriteUninstaller "$INSTDIR\Uninstall.exe"
+	;Registering the uninstaller
+	;Software\Microsoft\Windows\CurrentVersion\Uninstall\${NAME}
+	;HKLM <- registry elements for the whole machine
+	;HKCU <- registry for the user
+	WriteRegStr HKCU "${REG_UNINSTALL}" "DisplayName" "${NAME}"
+	WriteRegStr HKCU "${REG_UNINSTALL}" "DisplayIcon" "$INSTDIR\application.ico"
+	WriteRegStr HKCU "${REG_UNINSTALL}" "Publisher" "${COMPANY}"
+	WriteRegStr HKCU "${REG_UNINSTALL}" "DisplayVersion" "${VERSION}"
+	WriteRegStr HKCU "${REG_UNINSTALL}" "HelpLink" "${WEBSITE}"
+	WriteRegStr HKCU "${REG_UNINSTALL}" "URLInfoAbout" "${WEBSITE}"
+	WriteRegStr HKCU "${REG_UNINSTALL}" "InstallLocation" "$\"$INSTDIR$\""
+	WriteRegStr HKCU "${REG_UNINSTALL}" "InstallSource" "$\"$EXEDIR$\""
+	WriteRegDWord HKCU "${REG_UNINSTALL}" "NoModify" 1
+	WriteRegDWord HKCU "${REG_UNINSTALL}" "NoRepair" 1
+	WriteRegStr HKCU "${REG_UNINSTALL}" "UninstallString" "$\"$INSTDIR\Uninstall.exe$\""
+	WriteRegStr HKCU "${REG_UNINSTALL}" "Comments" "Uninstalls ${NAME}."
+	${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
+	IntFmt $0 "0x%08X" $0
+	WriteRegDWORD HKCU "${REG_UNINSTALL}" "EstimatedSize" "$0"
+SectionEnd
+Section "Plugins" SecPlugins 
+  SectionIn 1
+  	Setoutpath $instdir\resources
+    File /r ${APPPATH}\resources\plugins 
+SectionEnd
+Section "Data" SecData 
+  SectionIn 1
+  	Setoutpath $instdir\resources
+    File /r ${APPPATH}\resources\data 
+SectionEnd
+#Language strings
+LangString DESC_SecRequired ${LANG_ENGLISH} "Basic application to run ${NAME}."
+LangString DESC_SecPlugins ${LANG_ENGLISH} "Optional plugins for ${NAME}."
+LangString DESC_SecData ${LANG_ENGLISH} "Test datasets for ${NAME}."
+LangString DESC_SecRequired ${LANG_GERMAN} "Grundinstallation für ${NAME}."
+LangString DESC_SecPlugins ${LANG_GERMAN} "Optionale Plugins für ${NAME}."
+LangString DESC_SecData ${LANG_GERMAN} "Testdatensätze."
+;Assign language strings to sections
+!insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecRequired} $(DESC_SecRequired)
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecPlugins} $(DESC_SecPlugins)
+  !insertmacro MUI_DESCRIPTION_TEXT ${SecData} $(DESC_SecData)
+!insertmacro MUI_FUNCTION_DESCRIPTION_END
+#Uninstaller Section
+Section "Uninstall"
+  ;installed files
+  Delete "$INSTDIR\Uninstall.exe"
+  RMDir /r "$INSTDIR"
+  !insertmacro MUI_STARTMENU_GETFOLDER Application $StartMenuFolder  
+  Delete "$STARTMENU\Programs\${NAME}\Uninstall.lnk"
+  Delete "$STARTMENU\Programs\${NAME}\${NAME}.lnk"
+  Delete "$STARTMENU\Programs\${NAME}\${NAME} Help.lnk"
+  Delete "$STARTMENU\Programs\${NAME}\README.lnk"
+  RMDir "$STARTMENU\Programs\${NAME}"
+  Delete "$DESKTOP\${NAME}.lnk"   
+  DeleteRegKey /ifempty HKCU "Software\${NAME}"
+  DeleteRegKey HKCU "${REG_UNINSTALL}"
+SectionEnd
+Function un.onUninstSuccess
+  MessageBox MB_OK "You have successfully uninstalled ${NAME}."
+FunctionEnd
+#Installer Functions
+!include LogicLib.nsh
+Function .onInit 
+  ;check if application is already installed 
+  ReadRegStr $R0 HKCU "${REG_UNINSTALL}" "UninstallString"
+  StrCmp $R0 "" done 
+  MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION  "${NAME} is already installed. $\n$\nClick `OK` to remove the previous version or `Cancel` to cancel this upgrade." \
+  IDOK uninst
+  Abort
+;Run the uninstaller
+uninst:
+   Exec $INSTDIR\Uninstall.exe ; instead of the ExecWait line
+done: 
+ !insertmacro MUI_LANGDLL_DISPLAY
+FunctionEnd
+
+h4. NSIS Script for Users with Admin rights required (UAC needed)
+
+Tutorial: 
+"NSIS Sample Script":http://nsis.sourceforge.net/A_sample_script_that_uses_several_cool_functions_(replace_txt,_mutually_exclusive_functions,_MUI,_patch_install,_etc.
+"NSIS Sample installation script":http://nsis.sourceforge.net/Sample_installation_script_for_an_application
+
+bc. !include "MUI2.nsh"
+;--------------------------------
+;General
+  ;Name and file
+  Name "${NAME}"
+  OutFile "..\${NAME}-Setup.exe"
+  ;Default installation folder
+  InstallDir "$PROGRAMFILES\${NAME}\"  
+  ;Get installation folder from registry if available
+  InstallDirRegKey HKCU "Software\${NAME}\" ""
+  ;Request application privileges for Windows Vista
+  RequestExecutionLevel admin
+  BrandingText "${NAME} - ${BRANDING}"
+  Caption "${NAME}"
+  VIProductVersion "${VERSION}"
+  VIAddVersionKey ProductName "${NAME}"
+  VIAddVersionKey Comments "For additional details, visit ${WEBSITE}"
+  VIAddVersionKey CompanyName "${COMPANY}"
+  VIAddVersionKey LegalCopyright "${BUILDER}"
+  VIAddVersionKey FileDescription "${NAME}"
+  VIAddVersionKey FileVersion "${VERSION}"
+  VIAddVersionKey ProductVersion "${VERSION}"
+  VIAddVersionKey InternalName "${NAME}"
+  VIAddVersionKey LegalTrademarks "${TRADEMARK}"
+  VIAddVersionKey OriginalFilename "${EXENAME}"		
+;--------------------------------
+;Variables
+  Var StartMenuFolder
+;--------------------------------
+;Interface Settings
+  !define MUI_ABORTWARNING  
+  !define MUI_HEADERIMAGE
+  !define MUI_HEADERIMAGE_BITMAP "header.bmp" ; optional
+  !define MUI_WELCOMEFINISHPAGE_BITMAP "wizard.bmp" ; optional
+  !define MUI_UNWELCOMEFINISHPAGE_BITMAP "wizard.bmp" ; optional
+  !define MUI_ICON "application.ico"
+  !define MUI_UNICON "application.ico"
+;--------------------------------
+;Pages
+  !insertmacro MUI_PAGE_WELCOME
+  !insertmacro MUI_PAGE_LICENSE "License.txt"
+  !insertmacro MUI_PAGE_COMPONENTS
+  !insertmacro MUI_PAGE_DIRECTORY
+   ;Start Menu Folder Page Configuration
+  !define MUI_STARTMENUPAGE_REGISTRY_ROOT "HKCU" 
+  !define MUI_STARTMENUPAGE_REGISTRY_KEY "Software\${NAME}" 
+  !define MUI_STARTMENUPAGE_REGISTRY_VALUENAME "Start Menu Folder"  
+  !insertmacro MUI_PAGE_STARTMENU Application $StartMenuFolder   
+  !insertmacro MUI_PAGE_INSTFILES  
+  !define MUI_FINISHPAGE_LINK "Visit ${NAME} at ${WEBSITE} for News, FAQs and Support."
+  !define MUI_FINISHPAGE_LINK_LOCATION "${WEBSITE}"
+  !define MUI_FINISHPAGE_SHOWREADME "$INSTDIR\README.txt"
+  !define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
+  !define MUI_FINISHPAGE_RUN  "$INSTDIR\${NAME}.exe" 
+  !define MUI_FINISHPAGE_RUN_NOTCHECKED
+  !insertmacro MUI_PAGE_FINISH  
+  !insertmacro MUI_UNPAGE_CONFIRM
+  !insertmacro MUI_UNPAGE_INSTFILES
+  !insertmacro MUI_UNPAGE_FINISH   
+;--------------------------------
+;Languages 
+  !insertmacro MUI_LANGUAGE "English"
+  !insertmacro MUI_LANGUAGE "German"
+;--------------------------------
+;Installer Sections
+!include "FileFunc.nsh"
+!define ARP "Software\Microsoft\Windows\CurrentVersion\Uninstall\${NAME}"
+Section "Main application (Required)"  SecRequired
+  SectionIn RO
+  SetOutPath "$INSTDIR"
+  File /r "${APPPATH}\lib"
+  File /r /x plugins /x data ${APPPATH}\resources 
+  File "${APPPATH}\*"
+  File "application.ico"  
+  ;Store installation folder
+  WriteRegStr HKCU "Software\${NAME}" "" $INSTDIR
+  ;Create uninstaller
+  WriteUninstaller "$INSTDIR\Uninstall.exe"
+  ;Add "Add/Remove Programs" section in the control panel /S -> quiet uninstall
+  WriteRegStr HKLM "${ARP}" "DisplayName" "${NAME}"
+  WriteRegStr HKLM "${ARP}" "DisplayIcon" "$INSTDIR\application.ico"
+  WriteRegStr HKLM "${ARP}" "Publisher" "${COMPANY}"
+  WriteRegStr HKLM "${ARP}" "DisplayVersion" "${VERSION}"
+  WriteRegStr HKLM "${ARP}" "HelpLink" "${WEBSITE}"
+  WriteRegStr HKLM "${ARP}" "URLInfoAbout" "${WEBSITE}"
+  WriteRegStr HKLM "${ARP}" "InstallLocation" "$\"$INSTDIR$\""
+  WriteRegStr HKLM "${ARP}" "InstallSource" "$\"$EXEDIR$\""    
+  WriteRegDWord HKLM "${ARP}" "NoModify" 1
+  WriteRegDWord HKLM "${ARP}" "NoRepair" 1
+  WriteRegStr HKLM "${ARP}" "UninstallString" "$\"$INSTDIR\Uninstall.exe$\" /S"
+  WriteRegStr HKLM "${ARP}" "Comments" "Uninstalls ${NAME}."
+  ;Create desktop shortcut
+  CreateShortCut "$DESKTOP\${NAME}.lnk" "$INSTDIR\${NAME}.exe" ""  
+  !insertmacro MUI_STARTMENU_WRITE_BEGIN Application    
+  ;Create shortcuts
+  CreateDirectory "$SMPROGRAMS\$StartMenuFolder"
+  CreateShortCut "$SMPROGRAMS\$StartMenuFolder\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
+  CreateShortCut "$SMPROGRAMS\$StartMenuFolder\README.lnk" "notepad.exe" "$INSTDIR\README.txt"
+  CreateShortCut "$SMPROGRAMS\$StartMenuFolder\${NAME} Help.lnk" "$INSTDIR\help.html" 
+  CreateShortCut "$SMPROGRAMS\$StartMenuFolder\${NAME}.lnk" "$INSTDIR\${NAME}.exe" "application.ico" 
+  !insertmacro MUI_STARTMENU_WRITE_END 
+ ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
+ IntFmt $0 "0x%08X" $0
+ WriteRegDWORD HKLM "${ARP}" "EstimatedSize" "$0"
+SectionEnd
+Section "Plugins" SecPlugins 
+  SectionIn 1
+  	Setoutpath $instdir\resources
+    File /r ${APPPATH}\resources\plugins 
+SectionEnd
+Section "Data" SecData 
+  SectionIn 1
+  	Setoutpath $instdir\resources
+    File /r ${APPPATH}\resources\data 
+SectionEnd
+;--------------------------------
+;Descriptions
+  ;Language strings
+  LangString DESC_SecRequired ${LANG_ENGLISH} "Basic application to run ${NAME}."
+  LangString DESC_SecPlugins ${LANG_ENGLISH} "Optional plugins for ${NAME}."
+  LangString DESC_SecData ${LANG_ENGLISH} "Test datasets for ${NAME}."
+  LangString DESC_SecRequired ${LANG_GERMAN} "Grundinstallation für ${NAME}."
+  LangString DESC_SecPlugins ${LANG_GERMAN} "Optionale Plugins für ${NAME}."
+  LangString DESC_SecData ${LANG_GERMAN} "Testdatensätze."
+  ;Assign language strings to sections
+  !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecRequired} $(DESC_SecRequired)
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecPlugins} $(DESC_SecPlugins)
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecData} $(DESC_SecData)
+  !insertmacro MUI_FUNCTION_DESCRIPTION_END
+;--------------------------------
+;Uninstaller Section
+Section "Uninstall"
+  ;installed files
+  Delete "$INSTDIR\Uninstall.exe"
+  RMDir /r "$INSTDIR"
+  !insertmacro MUI_STARTMENU_GETFOLDER Application $StartMenuFolder    
+  Delete "$SMPROGRAMS\$StartMenuFolder\Uninstall.lnk"
+  Delete "$SMPROGRAMS\$StartMenuFolder\${NAME}.lnk"
+  Delete "$SMPROGRAMS\$StartMenuFolder\${NAME} Help.lnk"
+  Delete "$STARTMENU\$StartMenuFolder\README.lnk"
+  RMDir "$SMPROGRAMS\$StartMenuFolder"
+  Delete "$DESKTOP\${NAME}.lnk"   
+  DeleteRegKey /ifempty HKCU "Software\${NAME}"
+  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${NAME}"
+SectionEnd
+;--------------------------------    
+;MessageBox Section 
+Function un.onUninstSuccess
+  MessageBox MB_OK "You have successfully uninstalled ${NAME}."
+FunctionEnd
+;--------------------------------
+;Installer Functions
+!include LogicLib.nsh
+Function .onInit 
+  ;check if application is already installed 
+  ReadRegStr $R0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${NAME}" "UninstallString"
+  StrCmp $R0 "" done 
+  MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION  "${NAME} is already installed. $\n$\nClick `OK` to remove the previous version or `Cancel` to cancel this upgrade." \
+  IDOK uninst
+  Abort
+ ;Run the uninstaller
+uninst:
+   Exec $INSTDIR\Uninstall.exe ; instead of the ExecWait line
+done: 
+ !insertmacro MUI_LANGDLL_DISPLAY
+FunctionEnd
+
+h4. Task windows-nsis
+
+Tutorial on code signing http://www.ewert-technologies.ca/blog/articles/cross-platform-code-signing
+
+
+bc. <target name="windows-nsis" depends="windows-build" description="Create installer">	
+		<property name="website" value="http://3.14a.ch" />
+		<property name="branding" value="${version} Beta" />			
+		<!-- copy template files to dist folder -->
+		<delete dir="${dist}/${application}Installer" />
+		<mkdir dir="${dist}/${application}Installer" />
+		<!-- copy application to isntaller dir -->
+		<copy todir="${dist}/${application}Installer">
+			<fileset dir="${template}/nsis" />
+		</copy>
+		<!-- copy application to isntaller dir -->
+		<copy todir="${dist}/${application}Installer/App">
+			<fileset dir="${dist.windows}" />
+		</copy>
+		<exec executable="${lib.build}/NSISPortable/App/NSIS/makensis.exe" dir="${dist}/${application}Installer" failonerror="true">
+			<!-- providing some nsis definitions -->
+			<arg value="/V2" />
+			<arg value="/DNAME=${application}" />
+			<arg value="/DVERSION=${revision} " />
+			<arg value="/DBRANDING=${branding}" />
+			<arg value="/DWEBSITE=${website}" />
+			<arg value="/DEXENAME=${application}.exe" />
+			<arg value="/DTRADEMARK=${application} is a trademark of ${builder}." />
+			<arg value="/DEXENAME=${application}.exe" />
+			<arg value="/DBUILDER=3.14a" />
+			<arg value="/DCOMPANY=University of Zurich" />									
+			<arg value="/DAPPPATH=App" />
+			<!-- passing the script -->
+			<arg value="installer.nsi" />
+		</exec>
+		<exec executable="${lib.build}/NSISPortable/App/NSIS/makensis.exe" dir="${dist}/${application}Installer" failonerror="true">
+			<!-- providing some nsis definitions -->
+			<arg value="/V2" />
+			<arg value="/DNAME=${application}" />
+			<arg value="/DVERSION=${revision} " />
+			<arg value="/DBRANDING=${branding}" />
+			<arg value="/DWEBSITE=${website}" />
+			<arg value="/DEXENAME=${application}.exe" />
+			<arg value="/DTRADEMARK=${application} is a trademark of ${builder}." />
+			<arg value="/DEXENAME=${application}.exe" />
+			<arg value="/DBUILDER=3.14a" />
+			<arg value="/DCOMPANY=University of Zurich" />									
+			<arg value="/DAPPPATH=App" />
+			<!-- passing the script -->
+			<arg value="installer-user.nsi" />
+		</exec>
+		<delete dir="${dist}/${application}Installer" />
+	</target>
+	
+h3. ANT OSX build
+
+
+h4. OSX folder structure
+
+OSX applications are stored inside a _ApplicationName.app_ folder with the below shown structure.
+In the project folder setup the _template.app_ folder is set copied inside the @${template.osx}@
+
+*template.app*
+
+* *Contents*
+** MacOS
+*** JavaApplicationStub
+** Resources
+*** Java
+*** aplication.icns
+** Info.plist
+** PkgInfo
+
+h4. Info.plist
+
+During the @osx-build@ tasks the following words starting with APP* will be replaced. Therefore no further change need to be done.
+
+bc. <?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>APPNAME</string>
+	<key>CFBundleGetInfoString</key>
+	<string>APPINFOSTRING</string>
+	<key>CFBundleVersion</key>
+	<string>APPBUNDLEVERSION</string>
+    <key>CFBundleShortVersionString</key>
+    <string>APPBUNDELSHORTVERSION</string>	
+	<key>CFBundleAllowMixedLocalizations</key>
+	<string>true</string>
+	<key>CFBundleExecutable</key>
+	<string>JavaApplicationStub</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>APPLANGUAGE</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleSignature</key>
+	<string>APPL</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleIconFile</key>
+	<string>APPICONFILE</string>
+	<key>CFBundleIdentifier</key>
+	<string>APPMAINCLASS</string>
+	<key>Java</key>
+	<dict>
+      <key>SplashFile</key>
+      <string>$JAVAROOT/APPSPLASHFILE</string>
+      <key>VMOptions</key>
+      <array>
+        <string>-Xms128M</string>
+        <string>-Xmx1024M</string>
+      </array>	   
+		<key>MainClass</key>
+		<string>APPMAINCLASS</string>
+		<key>JVMVersion</key>
+		<string>1.6+</string>		
+		<key>ClassPath</key>
+		<string>$JAVAROOT/APPNAME.jar</string>
+		<key>WorkingDirectory</key>
+		<string>$APP_PACKAGE/Contents/Resources/Java</string>
+		<key>Properties</key>
+		<dict>
+			<key>javaroot</key>
+			<string>$JAVAROOT</string>
+			<key>com.apple.macos.useScreenMenuBar</key>
+			<string>true</string>
+			<key>apple.awt.showGrowBox</key>
+			<string>true</string>
+			<key>com.apple.smallTabs</key>
+			<string>true</string>
+			<key>apple.awt.Antialiasing</key>
+			<string>false</string>
+			<key>apple.awt.TextAntialiasing</key>
+			<string>true</string>
+			<key>com.apple.hwaccel</key>
+			<string>true</string>
+			<key>apple.awt.use-file-dialog-packages</key>
+			<string>false</string>
+			<key>apple.awt.graphics.UseQuartz</key>
+			<string>true</string>			
+		</dict>
+	</dict>
+</dict>
+</plist>
+
+h4. Task osx-build
+
+The target @osx-build@ creates within the osx distribution folder the osx application and copies the relevant files from the osx application template folder into that folder. The targets @osx-zip@ and @osx-tar@ compress the @dist.osx@ folder to zip and tar files.
+
+# run the @osx-build@ ANT task, conducting the following steps:
+## Creates the @${dist.osx}@ folder
+## Copy OSX template folder @${template.osx}/template.app@ to @{dist.osx}/${application}.app@ folder.
+## As ANT copy does not preserve permissions chmod the @${dist.osx}/${application}.app/Contents/MacOS/JavaApplicationStub@ file @ugo+x@.
+## Copy all the files in @${dist.jar}@ (jar files with all the relevant resources and libraries) to the @${dist.osx}/${application}.app/Contents/Resources/Java/@ folder
+# Copy @${template.osx}/application.icns@ to @${dist.osx}/${application}.app/Contents/Resources@
+# Copy @${template.osx}/splash.png@ to @${dist.osx}/${application}.app/Contents/Resources/Java@ 
+# Replace placeholders in @${dist.osx}/${application}.app/Contents/Info.plist@. To replace: APPNAME, APPINFOSTRING, APPBUNDLEVERSION, APPBUNDLEREVISION, APPBUNDELSHORTVERSION, APPLANGUAGE, APPSIGNATURE, APPICONFILE, APPSPLASHFILE, APPMAINCLASS, APPCLASSPATH
+
+Unfortunately .dmg files can only be built on a mac.
+
+bc. <target name="osx-build" depends="jar">
+	<delete dir="${dist.osx}" />
+	<mkdir dir="${dist.osx}" />
+	<!-- create osx application folder structure from template.app -->
+	<copy todir="${dist.osx}/${application}.app">
+		<fileset dir="${template.osx}/template.app" />
+	</copy>
+	<!-- The ant copy command does not preserve permissions. -->
+	<chmod file="${dist.osx}/${application}.app/Contents/MacOS/JavaApplicationStub" perm="ugo+x" />
+	<copy file="${dist.jar}/${application}.jar" todir="${dist.osx}/${application}.app/Contents/Resources/Java" />
+	<copy file="${template.osx}/application.icns" todir="${dist.osx}/${application}.app/Contents/Resources" />
+	<copy file="${template.osx}/splash.png" todir="${dist.osx}/${application}.app/Contents/Resources/Java" />
+	<copy todir="${dist.osx}/${application}.app/Contents/Resources/Java/${lib}">
+		<fileset dir="${dist.jar}/${lib}" />
+	</copy>
+	<copy todir="${dist.osx}/${application}.app/Contents/Resources/Java/${resources}">
+		<fileset dir="${dist.jar}/${resources}" />
+	</copy>
+	<copy todir="${dist.osx}/${application}.app/Contents/Resources/Java">
+		<fileset dir="${template.doc}/" />
+	</copy>
+	<!-- replace placeholders in Info.plist. To replace: 
+		APPNAME,APPINFOSTRING,APPBUNDLEVERSION,APPBUNDLEREVISION,APPBUNDELSHORTVERSION,
+		APPLANGUAGE,APPSIGNATURE,APPICONFILE,APPSPLASHFILE,APPMAINCLASS,APPCLASSPATH -->
+	<replace dir="${dist.osx}/${application}.app/Contents" includes="Info.plist">
+		<replacefilter token="APPNAME" value="${application}" />
+		<replacefilter token="APPINFOSTRING" value="${copyright}" />
+		<replacefilter token="APPBUNDLEVERSION" value="${version}" />
+		<replacefilter token="APPBUNDLEREVISION" value="${revision}" />
+		<replacefilter token="APPBUNDELSHORTVERSION" value="${version}" />
+		<replacefilter token="APPLANGUAGE" value="${language}" />
+		<replacefilter token="APPSIGNATURE" value="${application}" />
+		<replacefilter token="APPICONFILE" value="application.icns" />
+		<!-- should reside inside the Resources folder-->
+		<replacefilter token="APPSPLASHFILE" value="splash.png" />
+		<!-- should reside inside the Resources/Java folder-->
+		<replacefilter token="APPMAINCLASS" value="${main-class}" />
+		<replacefilter token="APPCLASSPATH" value="${application}.jar" />
+	</replace>
+</target>
+<target name="osx-zip" depends="osx-build" description="Create windows zip">
+	<zip destfile="${dist}/${application}-OSX-${version}.zip" basedir="${dist.osx}" />
+</target>
+<target name="osx-tar" depends="osx-zip" description="Create osx tar">
+	<tar destfile="${dist}/${application}-OSX-${version}.tar.gz" compression="gzip">
+		<zipfileset src="${dist}/${application}-OSX-${version}.zip" />
+	</tar>
+</target>
+
+h3. ANT Document converstion with pandoc
+
+Copy "Pandoc folder":http://johnmacfarlane.net/pandoc/ after installation (located in _C:\Users\USERNAME\AppData\Local\Pandoc_)  to the @${lib.build}/Pandoc@ or add the path to the pandoc installation folder in the executable command of ANT @<exec executable="E:\Development\Pandoc\bin\pandoc.exe" .. >@
+
+*Website:* "Pandoc":http://johnmacfarlane.net/pandoc/
+*Documentation:* "User Guide":http://johnmacfarlane.net/pandoc/README.html, "Demos":http://johnmacfarlane.net/pandoc/demos.html 
+
+Properties used for the pandoc examples.
+
+bc. <property name="file" location="file.textile" />
+<property name="fileUTF8" location="file-utf8.textile" />
+<property name="css" location="main.css" />
+<property name="pandoc" location="project/lib/Pandoc/pandoc.exe" />
+
+p. Pandoc accepts so far only UTF8 encoded text files. The @to-UTF8@ converts from cp1252 to UTF8.
+
+bc. <target name="to-UTF8" >
+	<copy file="${file}" encoding="cp1252" outputencoding="UTF-8" overwrite="true" tofile="${fileUTF8}" >
+</target> 
+
+h4. ANT Pandoc Markdown conversion. 
+
+Use  quot;@ to add " for file paths with white space.
+
+bc. <target name="pandoc-markdown" description="pandoc conversion to markdown">
+	<exec executable="${pandoc}">
+		<arg line=" -t markdown  -s &quot;${file}&quot; -o &quot;${file}.md&quot;" />
+	</exec>
+</target>
+
+h4. ANT @pandoc-docx@ task
+
+bc. <target name="pandoc-docx" description="pandoc conversion to docx">
+	<exec executable="">
+		<arg line=" -t docx  -s &quot;${file}&quot; -o &quot;${file}.docx&quot;" />
+	</exec>
+</target>
+
+h4. ANT @pandoc-latex@ task
+
+bc. <target name="pandoc-latex" description="pandoc conversion to latex">
+	<exec executable="">
+		<arg line=" -t latex  -s &quot;${file}&quot; -o &quot;${file}.tex&quot;" />
+	</exec>
+</target>
+
+h4. ANT @pandoc-html@ task
+
+bc. <target name="pandoc-html" description="pandoc conversion to html">
+	<exec executable="${pandoc}">
+		<arg line=" -t html5 -s -S --toc --highlight-style=pygments --css &quot;${css}&quot; -i --mathjax --number-sections  &quot;${file}&quot; -o &quot;${file}.html&quot;" />
+	</exec>
+</target>
+
+h4. ANT @pandoc-htmlslides@ task
+
+bc. <target name="pandoc-htmlslides" description="pandoc conversion to htmlslides">
+	<exec executable="${pandoc}">
+		<arg line=" -t slidy  -s --self-contained  &quot;${file}&quot; -o &quot;${file}.html&quot;" />
+	</exec>
+</target>
+
+h4. ANT @pandoc-epub@ and @pandoc-epub-cover@ task
+
+Ebook creation with pandoc needs a bit more tweaking than just with a one-liner to convert the source files to the .epub format. The format requires an xml metadata file containing a series of "Dublin Core elements":http://dublincore.org/documents/dces/, that in the following ANT task is created on-the-fly. @&lt;@ replaces &lt; and @&gt;@ replaces &gt; respectively.
+*Wikipedia:*"EPUB Format":http://en.wikipedia.org/wiki/EPUB
+*Tutorial*: "Epub creation with pandoc":http://johnmacfarlane.net/pandoc/epub.html, "Kindle tutorial":http://www.bit-101.com/blog/?cat=12
+
+bc. <dc:title>This is the title</dc:title>
+<dc:creator>Tom Sawyer</dc:creator>
+<dc:date>2013-03-22</dc:date><!-- ISO 8601 format YYYY-MM-DD -->
+<dc:identifier id="BookId" opf:scheme="ISBN">123456789X</dc:identifier>
+<dc:rights>Creative Commons</dc:rights>
+<dc:language>en-US</dc:language>
+ 
+p. Properties for epub creation
+
+bc. <property name="title" value="This is the title" />
+<property name="author" value="Tom Sawyer" />
+<property name="copyright" value="Creative Commons" />
+<property name="language" value="en-US" />
+<property name="cover" location="cover.png" />
+
+p. ANT @pandoc-epub@ task
+
+bc. <target name="pandoc-epub">
+	<echo file="${outputFile}-metadata.xml">
+		&lt;dc:title&gt;${title}&lt;/dc:title&gt;${line.separator}
+		&lt;dc:creator&gt;${author}&lt;/dc:creator&gt;${line.separator}		
+		&lt;dc:rights&gt;${copyright} &lt;/dc:rights&gt;${line.separator}
+		&lt;dc:language&gt;${language}&lt;/dc:language&gt;
+	</echo>
+	<exec executable="${pandoc}">
+		<arg line=" -S --toc -t epub --epub-metadata=&quot;${outputFile}-metadata.xml&quot;  -s &quot;${inputFile}&quot; -o &quot;${outputFile}.epub&quot;" />
+	</exec>
+	<delete file="${outputFile}-metadata.xml" />
+</target>
+
+p. ANT @pandoc-epub-cover@ task
+
+bc. <target name="pandoc-epub-cover">
+	<echo file="${outputFile}-metadata.xml">
+		&lt;dc:title&gt;${title}&lt;/dc:title&gt;${line.separator}
+		&lt;dc:creator&gt;${author}&lt;/dc:creator&gt;${line.separator}		
+		&lt;dc:rights&gt;${copyright} &lt;/dc:rights&gt;${line.separator}
+		&lt;dc:language&gt;${language}&lt;/dc:language&gt;
+	</echo>
+	<exec executable="${pandoc}">
+		<arg line=" -S --toc -t epub --epub-metadata=&quot;${file}-metadata.xml&quot; --epub-cover-image=&quot;${cover}&quot; -s &quot;${file}&quot; -o &quot;${file}.epub&quot;" />
+	</exec>
+	<delete file="${file}-metadata.xml" />
+</target> 
+
+h3. ANT Email task
+
+Send email with ant and gmail. Therefore one needs java mail.jar and the ant-classloader.jar. For some reason sending attachment wasn't possible.
+
+# Download "Java Mail":http://www.oracle.com/technetwork/java/javamail javamail1_4_6.zip move mail.jar in your @${lib.build}/ant@ folder
+# Download "Ant Tasks Classloader":http://enitsys.sourceforge.net/ant-classloadertask/ move ant-classloader.jar in your @${lib.build}/ant@ folder
+
+Properties used for the email tasks:
+
+bc. <property name="gmail.user" value="user@gmail.com" />
+<property name="gmail.pw" value="*******" />
+<property name="email.to" value="destination@gmail.com" />
+<property name="application" value="Test Application" />
+
+bc. <target name="mail-done">
+	<path id="ant-classpath">
+		<fileset dir="${lib.build}/ant" includes="**/*.jar" />
+	</path>
+	<taskdef name="classloadertask" classname="org.apache.tools.ant.taskdefs.ClassloaderTask" classpathref="ant-classpath" />
+	<classloadertask classpathRef="ant-classpath" loader="thread" />
+	<mail from="${gmail.user}" tolist="${email.to}" mailhost="smtp.gmail.com" mailport="465" ssl="true" user="${gmail.user}" password="${gmail.pw}" subject="${application} Test build" message="${application} test build has completed." />
+</target>
+
+h2. Adding a project to version control
+
+Install egit from eclipse marketplace *Help / Eclipse Marketplace* (install new software resulted in errors)
+
+Follow EGit User guide Help: *Getting Started / Basic Tutorial*. "GitHub User Guider":http://wiki.eclipse.org/EGit/User_Guide
+
+
+h3. Configuration
+
+Whenever the history of the repository is changed (technically, whenever a commit is created), Git keeps track of the user who created that commit. This information is stored in file ~/.gitconfig under dedicated keys.
+
+* Preferences / Team / Git / Configuration 
+* New Entry and enter the key value pairs user.email and user.name
+** key: user.email Value: user@email.com
+** key: user.name Value: Joe Developer
+
+h3. Setup Home Directory in Windows
+
+# In Windows 7, type "environment" at the start menu 
+# Select "Edit environment variables for your account" 
+# Click the "New" button. 
+# Enter "HOME" in the name field 
+# Enter "%USERPROFILE%" or some other path in the value field. 
+# Click OK, and OK again. You have just added the Home directory on Windows.
+# Restart Eclipse
+
+If the HOME variable is not defined the home directory will be calculated by concatenating HOMEDRIVE and HOMEPATH. 
+
+h3. System wide configuration 
+
+In case you use *git for windows*, you have to add this information in the EGit Settings *Team/Git/Configuration* and then the *System Settings tab* and browse to locate where git is installed eg. C:\Program Files(x86)\Git. . (Also valid for git in cygwin or TortoiseGit)
+
+
+h3. Create repository
+
+# Create a new java Project
+# Select project and click *File / Team / Share Project*
+# Select repository type *Git* and select next, and select the project
+# Click create repository and finish.
+
+h3. track changes
+
+# Click Team and select *add to index*
+# + decorator shows that the file has been added to version control 
+# Mark folders that should not be included right-click *Team / Ignore* (this creates a _.gitignore_ file in the project folder. Eg. for the folder 'bin'.
+# show .files in eclipse *Package Explorer / View Menu (top right) / Filters unselect top entry* to ignore files that strart with .(period)
+# Select *Team / Commit* in project context menu.  Enter commit message, the first line will be the short log of the commit. Ev. add Signed-off-by tag or change name if by other author, then commit. Decorators then change.
+
+h3. History
+
+# Select *Team / Show in history*
+
+h2. Wikitext editor for documentation and help stuff..
+
+*Guide*: "WikiText User Guide":https://github.com/turesheim/org.eclipse.mylyn.docs/blob/master/org.eclipse.mylyn.wikitext.help.ui/help/Mylyn%20WikiText%20User%20Guide.textile
+
+p. how to use WikiText (MYLYN) in eclipse. WikiText also provides a wiki text editor for Eclipse and Ant tasks for converting lightweight markup to HTML and other formats.
+
+*Create a new Wiki File:* Use the new file wizard, choose *New / File, or New / Other... / General / File*. In the
+filename field, enter the name of the file with a *.textile* or other registered extension. Once created it should by default open in the WikiText editor. WikiTexttext editor provides a *source* and a *preview tab*.
+
+*Switch markup language*: As wikitext supports different markup languages you can switch in the context menu inside WikiText editor C*ontext menu / Markup Language / Textile*.
+
+* Textile *cheatsheet* can be accessed with *F1*. 
+* *Outline* shows the structured view of the text  (Window / Show View / Outline)
+* *Word Completion* is shown with *CTRL+.* 
+* *Spell checking* is available by pressing *CTRL+1* 
+* *Content assist* is available by pressing *CTRL+SPACE* (in my case)
+* *Quick outline* is shown with *CTRL+O* (not null)
+
+
+Change preferences in the eclipse preferences dialog. Such as CSS stylesheet. *General / Editors / Text Editors / WikiText.*
+
+Links:
+
+* "Textile Wikipedia":http://en.wikipedia.org/wiki/Textile_%28markup_language%29
+* "Advanced WikiTest":http://www.peterfriese.de/advanced-wikitext/
+* convert textil "stackoverflow":http://stackoverflow.com/questions/8255510/how-do-i-convert-textile-to-eclipse-help-using-ant
+* "How an example book ist assembled with mylyn":https://github.com/turesheim/org.eclipse.mylyn.docs/blob/master/org.eclipse.mylyn.docs.epub.help/docs/examples.textile
+* (help files eg. markdown textile mediawiki ev. there are better solutions [stackoverflow](http://stackoverflow.com/questions/3255484/in-search-of-an-open-source-standalone-markdown-gui-editor/3255528#3255528))
+* "Markdown Editor":http://www.winterwell.com/software/markdown-editor.php

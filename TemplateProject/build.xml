@@ -1,0 +1,520 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<project default="jar" name="genw2">
+	<!-- property values  are stored in a separate properties file -->
+	<property file="build.properties" />
+	
+	
+	<path id="jar-classpath">
+		<fileset dir="${lib}">
+			<include name="**/*.jar" />
+		</fileset>
+	</path>
+
+	<target name="clean">
+		<delete dir="${build}" />
+		<delete dir="${dist}" />
+	</target>
+	<target name="init">
+		<mkdir dir="${build.classes}" />
+		<mkdir dir="${dist}" />
+	</target>
+	<target name="copy-non-java-files">
+		<copy todir="${build.classes}" includeemptydirs="false">
+			<fileset dir="src" excludes="**/*.java" />
+		</copy>
+	</target>
+	<target name="compile" depends="init,copy-non-java-files">
+		<echo message="Ant ${ant.project.name}: Building  application:${application} ${version}" />
+		<!--<echoproperties />		-->
+		<javac destdir="${build.classes}" debug="${build.debug}" includeAntRuntime="yes" srcdir="${src}">
+			<classpath refid="jar-classpath" />
+		</javac>
+	</target>
+
+	<target name="jar" depends="compile">
+		<tstamp prefix="build-info">
+			<format property="current-date" pattern="d-MMMM-yyyy" locale="en" />
+			<format property="current-time" pattern="hh:mm:ss a z" locale="en" />
+			<format property="year-month-day" pattern="yyyy-MM-dd" locale="en" />
+		</tstamp>
+
+		<!-- create executable jar base folder and copy all the libraries relative to the final jar -->
+		<mkdir dir="${dist.jar}" />
+		<copy todir="${dist.jar}/${lib}" includeemptydirs="false">
+			<fileset dir="${lib}" includes="**/*.jar" />
+		</copy>
+		<!-- copy resources folder to the executable jar base folder -->
+		<copy todir="${dist.jar}/${resources}" includeemptydirs="false">
+			<fileset dir="${resources}" includes="**/*" />
+		</copy>
+		<!-- create classpaths for the copied lib folder to be referenced in the manifest of the jar file -->
+		<path id="dist.lib">
+			<fileset dir="${dist.jar}/${lib}">
+				<include name="**/*.jar" />
+			</fileset>
+		</path>
+		<!-- convert the classpath into a space separated list to set the manifest Class-Path attribute -->
+		<manifestclasspath property="lib.list" jarfile="${dist.jar}/${application}.jar">
+			<classpath refid="dist.lib" />
+		</manifestclasspath>
+		<!-- build the jar in the jar base folder -->
+		<jar jarfile="${dist.jar}/${application}.jar">
+			<fileset dir="${build.classes}" />
+			<manifest>
+				<attribute name="Built-By" value="${builder}" />
+				<attribute name="Built-On" value="${build-info.current-date}" />
+				<attribute name="Built-At" value="${build-info.current-time}" />
+				<attribute name="Implementation-Version" value="${version}" />
+				<attribute name="Main-Class" value="${main-class}" />
+				<attribute name="Class-Path" value=". ${lib.list}" />
+			</manifest>
+		</jar>
+	</target>
+	<target name="run" description="Run program with parameters (it's not just compiling)">
+		<java fork="true" jar="${dist.jar}/${application}.jar" />
+	</target>
+	<!-- ********************************************************* -->
+	<!-- Java Doc - generate api documentation 					   -->
+	<!-- ********************************************************* -->
+	<target name="javadoc" depends="compile" description="Generates java docs for ${application} in folder:${doc}">
+		<javadoc packagenames="app.*,genw2.*" sourcepath="${src}" destdir="${build.javadoc}" windowtitle="${application} Documentation" />
+	</target>
+
+	<!-- ********************************************************* -->
+	<!-- Windows APP   											   -->
+	<!-- ********************************************************* -->
+	<!-- WINDOWS Executable built with launch4j 
+		 http://launch4j.sourceforge.net/docs.html 
+		 http://www.informit.com/guides/content.aspx?g=java&seqNum=361
+		 http://stackoverflow.com/questions/6102231/running-launch4j-as-a-ant-build-task-on-macosx
+ 	 -->
+	<target name="windows-build" depends="jar">
+		<delete dir="${dist.windows}" />
+		<mkdir dir="${dist.windows}" />
+		<!-- copy all files needed for the build to the build work folder -->
+		<copy todir="${dist.windows}/${lib}">
+			<fileset dir="${dist.jar}/${lib}" />
+		</copy>
+		<copy todir="${dist.windows}/${resources}">
+			<fileset dir="${dist.jar}/${resources}" />
+		</copy>
+		<copy todir="${dist.windows}">
+			<fileset dir="${template.doc}/" />
+		</copy>
+		<copy file="${template.windows}/WindowsApp.xml" todir="${dist.windows}" />
+		<copy file="${template.windows}/application.ico" todir="${dist.windows}" />
+		<copy file="${template.windows}/splash.bmp" todir="${dist.windows}" />
+		<!-- edit WindowsApp.xml -->
+		<replace dir="${dist.windows}" includes="WindowsApp.xml">
+			<replacefilter token="APPJAR" value="${application}.jar" />
+			<replacefilter token="APPEXE" value="${application}.exe" />
+			<replacefilter token="APPMUTEXNAME" value="${application}" />
+			<replacefilter token="APPWINDOWTITLE" value="${application}" />
+		</replace>
+
+		<taskdef name="launch4j" classname="net.sf.launch4j.ant.Launch4jTask" classpath="${lib.build}/launch4j/launch4j.jar:${lib.build}/launch4j/lib/xstream.jar" />
+		<!--<taskdef name="launch4j" classname="net.sf.launch4j.ant.Launch4jTask" classpath="${launch4j.dir}/launch4j.jar:${launch4j.dir}/lib/xstream.jar" />-->
+		<!--<launch4j configFile="${template.windows}/WindowsApp.xml" jar="${dist.jar}/${application}.jar" outfile="${dist.windows}/${application}.exe" />-->
+		<launch4j configFile="${dist.windows}/WindowsApp.xml" jar="${dist.jar}/${application}.jar" outfile="${dist.windows}/${application}.exe" />
+		<!--<launch4j>
+			<config headerType="gui" jar="${dist}/${ant.project.name}.jar" outfile="${dist.windows}/${ant.project.name}.exe" 
+				errTitle="TestApp" chdir="." customProcName="true" 
+				icon="resources/build/windows/application.ico" downloadUrl="http://java.com/download">
+			    <var>SETTINGS="%HomeDrive%%HomePath%\\settings.ini"</var>
+				<singleInstance mutexName="${main-class}" windowTitle="${ant.project.name}" />
+			    <jre minVersion="1.4.0">
+			        <opt>-Dlaunch4j.exedir="%EXEDIR%"</opt>
+			        <opt>-Dlaunch4j.exefile="%EXEFILE%"</opt>
+			    </jre>
+			</config>
+		</launch4j>-->
+		<delete file="${dist.windows}/application.ico" />
+		<delete file="${dist.windows}/WindowsApp.xml" />
+		<delete file="${dist.windows}/splash.bmp" />
+	</target>
+
+	<target name="windows-zip" depends="windows-build" description="Create windows zip">
+		<zip destfile="${dist}/${application}-Windows-${version}.zip" basedir="${dist.windows}" />
+	</target>
+	<target name="windows-tar" depends="windows-zip" description="Create windows tar">
+		<tar destfile="${dist}/${application}-Windows-${version}.tar.gz" compression="gzip">
+			<zipfileset src="${dist}/${application}-Windows-${version}.zip" />
+		</tar>
+	</target>
+	<target name="windows-nsis" depends="windows-build" description="Create installer">	
+		<!-- Tutorial on code signing http://www.ewert-technologies.ca/blog/articles/cross-platform-code-signing -->
+		<property name="website" value="http://3.14a.ch" />
+		<property name="branding" value="${version} Beta" />
+				
+		<!-- copy template files to dist folder -->
+		<delete dir="${dist}/${application}Installer" />
+		<mkdir dir="${dist}/${application}Installer" />
+		<!--<copy file="${template}/nsis/installer.nsi" tofile="${dist}/${application}Installer/installer.nsi" />
+		<copy file="${template}/nsis/License.txt" tofile="${dist}/${application}Installer/License.txt" />
+		<copy file="${template}/nsis/application.ico" tofile="${dist}/${application}Installer/application.ico" />
+		<chmod file="${dist}/${application}Installer/License.txt" perm="ugo+rx" />
+		<chmod file="${dist}/${application}Installer/application.ico" perm="ugo+rx" />
+		-->
+		<!-- copy application to isntaller dir -->
+		<copy todir="${dist}/${application}Installer">
+			<fileset dir="${template}/nsis" />
+		</copy>
+
+		<!-- copy application to isntaller dir -->
+		<copy todir="${dist}/${application}Installer/App">
+			<fileset dir="${dist.windows}" />
+		</copy>
+
+		<exec executable="${lib.build}/NSISPortable/App/NSIS/makensis.exe" dir="${dist}/${application}Installer" failonerror="true">
+			<!-- providing some nsis definitions -->
+			<arg value="/V2" />
+			<arg value="/DNAME=${application}" />
+			<arg value="/DVERSION=${revision} " />
+			<arg value="/DBRANDING=${branding}" />
+			<arg value="/DWEBSITE=${website}" />
+			<arg value="/DEXENAME=${application}.exe" />
+			<arg value="/DTRADEMARK=${application} is a trademark of ${builder}." />
+			<arg value="/DEXENAME=${application}.exe" />
+			<arg value="/DBUILDER=3.14a" />
+			<arg value="/DCOMPANY=University of Zurich" />									
+			<arg value="/DAPPPATH=App" />
+			<!-- passing the script -->
+			<arg value="installer.nsi" />
+		</exec>
+		<exec executable="${lib.build}/NSISPortable/App/NSIS/makensis.exe" dir="${dist}/${application}Installer" failonerror="true">
+			<!-- providing some nsis definitions -->
+			<arg value="/V2" />
+			<arg value="/DNAME=${application}" />
+			<arg value="/DVERSION=${revision} " />
+			<arg value="/DBRANDING=${branding}" />
+			<arg value="/DWEBSITE=${website}" />
+			<arg value="/DEXENAME=${application}.exe" />
+			<arg value="/DTRADEMARK=${application} is a trademark of ${builder}." />
+			<arg value="/DEXENAME=${application}.exe" />
+			<arg value="/DBUILDER=3.14a" />
+			<arg value="/DCOMPANY=University of Zurich" />									
+			<arg value="/DAPPPATH=App" />
+			<!-- passing the script -->
+			<arg value="installer-user.nsi" />
+		</exec>
+		<!--<delete dir="${dist}/${application}Installer" />-->
+	</target>
+
+
+	<!-- Portable APP	http://portableapps.com/development/portableapps.com_format	 -->
+	<target name="portable-app" depends="windows-build" description="Create portable app www.portableapps.com">
+		<property name="homepage" value="http://3.14a.ch" />
+		<property name="description" value="Portable development build for ${application}" />
+		<property name="category" value="Development" />
+
+		<delete dir="${dist}/${application}Portable" />
+		<mkdir dir="${dist}/${application}Portable" />
+		<!-- copy portable app template to portable app dir -->
+		<copy todir="${dist}/${application}Portable/">
+			<fileset dir="${template}/portableApp" />
+		</copy>
+		<!-- copy application to portable app dir -->
+		<copy todir="${dist}/${application}Portable/App/${application}">
+			<fileset dir="${dist.windows}" />
+		</copy>
+		<!-- copy help files to portable app dir -->
+		<copy file="${template.doc}/help.html" tofile="${dist}/${application}Portable/help.html" />
+		<!-- replace settings in the appinfo.ini file  -->
+		<replace dir="${dist}/${application}Portable/App/AppInfo/" includes="appinfo.ini">
+			<replacefilter token="APPNAME" value="${application}" />
+			<replacefilter token="APPHOMEPAGE" value="${homepage}" />
+			<replacefilter token="APPDESCRIPTION" value="${description}" />
+			<replacefilter token="APPCATEGORY" value="${category}" />
+			<replacefilter token="APPLANGUAGE" value="${language}" />
+			<replacefilter token="APPREVISION" value="${revision}" />
+			<replacefilter token="APPVERSION" value="${version}" />
+		</replace>
+		<!-- replace settings in the launcher APPNAMEPortable.ini file  -->
+		<move file="${dist}/${application}Portable/App/AppInfo/Launcher/AppNamePortable.ini" tofile="${dist}/${application}Portable/App/AppInfo/Launcher/${application}Portable.ini" />
+		<replace dir="${dist}/${application}Portable/App/AppInfo/Launcher" includes="${application}Portable.ini">
+			<replacefilter token="APPEXE" value="${application}/${application}.exe" />
+			<replacefilter token="APPNAME" value="${application}" />
+			<replacefilter token="APPHOMEPAGE" value="${homepage}" />
+			<replacefilter token="APPDESCRIPTION" value="${description}" />
+			<replacefilter token="APPCATEGORY" value="${category}" />
+			<replacefilter token="APPLANGUAGE" value="${language}" />
+		</replace>
+		<!-- replace settings in the installer installer.ini file  -->
+		<!--<replace dir="${dist}/${application}Portable/App/AppInfo/" includes="installer.ini">
+		</replace>-->
+		<!-- exec portableApps launcher http://portableapps.com/apps/development/portableapps.com_launcher -->
+		<exec executable="${lib.build}/PortableApps.comLauncher/PortableApps.comLauncherGenerator.exe" />
+		<!-- exec portableApps installer http://portableapps.com/apps/development/portableapps.com_installer -->
+		<exec executable="${lib.build}/PortableApps.comInstaller/PortableApps.comInstaller.exe" />
+	</target>
+
+
+	<!-- ********************************************************* -->
+	<!-- OSX APP    										       -->
+	<!-- ********************************************************* -->
+	<!-- dmgs can only be built on a mac :-( 					   -->
+	<target name="osx-build" depends="jar">
+		<delete dir="${dist.osx}" />
+		<mkdir dir="${dist.osx}" />
+		<!-- create osx application folder structure from template.app -->
+		<copy todir="${dist.osx}/${application}.app">
+			<fileset dir="${template.osx}/template.app" />
+		</copy>
+		<!-- The ant copy command does not preserve permissions. -->
+		<chmod file="${dist.osx}/${application}.app/Contents/MacOS/JavaApplicationStub" perm="ugo+x" />
+		<copy file="${dist.jar}/${application}.jar" todir="${dist.osx}/${application}.app/Contents/Resources/Java" />
+		<copy file="${template.osx}/application.icns" todir="${dist.osx}/${application}.app/Contents/Resources" />
+		<copy file="${template.osx}/splash.png" todir="${dist.osx}/${application}.app/Contents/Resources/Java" />
+		<copy todir="${dist.osx}/${application}.app/Contents/Resources/Java/${lib}">
+			<fileset dir="${dist.jar}/${lib}" />
+		</copy>
+		<copy todir="${dist.osx}/${application}.app/Contents/Resources/Java/${resources}">
+			<fileset dir="${dist.jar}/${resources}" />
+		</copy>
+		<copy todir="${dist.osx}/${application}.app/Contents/Resources/Java">
+			<fileset dir="${template.doc}/" />
+		</copy>
+		<!-- replace placeholders in Info.plist. To replace: 
+			APPNAME,APPINFOSTRING,APPBUNDLEVERSION,APPBUNDLEREVISION,APPBUNDELSHORTVERSION,
+			APPLANGUAGE,APPSIGNATURE,APPICONFILE,APPSPLASHFILE,APPMAINCLASS,APPCLASSPATH -->
+		<replace dir="${dist.osx}/${application}.app/Contents" includes="Info.plist">
+			<replacefilter token="APPNAME" value="${application}" />
+			<replacefilter token="APPINFOSTRING" value="${copyright}" />
+			<replacefilter token="APPBUNDLEVERSION" value="${version}" />
+			<replacefilter token="APPBUNDLEREVISION" value="${revision}" />
+			<replacefilter token="APPBUNDELSHORTVERSION" value="${version}" />
+			<replacefilter token="APPLANGUAGE" value="${language}" />
+			<replacefilter token="APPSIGNATURE" value="${application}" />
+			<replacefilter token="APPICONFILE" value="application.icns" />
+			<!-- should reside inside the Resources folder-->
+			<replacefilter token="APPSPLASHFILE" value="splash.png" />
+			<!-- should reside inside the Resources/Java folder-->
+			<replacefilter token="APPMAINCLASS" value="${main-class}" />
+			<replacefilter token="APPCLASSPATH" value="${application}.jar" />
+		</replace>
+	</target>
+
+	<target name="osx-zip" depends="osx-build" description="Create windows zip">
+		<zip destfile="${dist}/${application}-OSX-${version}.zip" basedir="${dist.osx}" />
+	</target>
+
+	<target name="osx-tar" depends="osx-zip" description="Create osx tar">
+		<tar destfile="${dist}/${application}-OSX-${version}.tar.gz" compression="gzip">
+			<zipfileset src="${dist}/${application}-OSX-${version}.zip" />
+		</tar>
+	</target>
+	<!-- ********************************************************* -->
+	<!-- JUNIT tests    										   -->
+	<!-- ********************************************************* -->
+	<!-- based on junit4 jars hamcrest-core-1.3.jar junit-4.11.jar -->
+	<path id="test-classpath">
+		<path refid="jar-classpath" />
+		<pathelement location="${build.classes}" />
+		<pathelement location="${build.test}" />
+		<fileset dir="${lib.build}/junit" includes="**/*.jar" />
+	</path>
+	<target name="test-compile" depends="compile">
+		<delete dir="${build.data}" />
+		<delete dir="${build.reports}" />
+		<mkdir dir="${build.data}" />
+		<mkdir dir="${build.reports}" />
+		<mkdir dir="${build.test}" />
+		<copy todir="${build.test}">
+			<fileset dir="test" excludes="**/*.java" />
+		</copy>
+		<javac destdir="${build.test}" debug="${build.debug}" includeAntRuntime="true" srcdir="${test}">
+			<classpath refid="test-classpath" />
+		</javac>
+	</target>
+	<target name="test" depends="test-compile">
+		<junit printsummary="yes" haltonfailure="false">
+			<classpath refid="test-classpath" />
+			<formatter type="brief" usefile="no" />
+			<formatter type="xml" usefile="yes" />
+			<batchtest todir="${build.data}">
+				<fileset dir="${build.test}" includes="**/*Test*.class" />
+			</batchtest>
+		</junit>
+	</target>
+	<target name="report" description="Create a report for the rest result">
+		<junitreport todir="${build.data}">
+			<fileset dir="${build.data}">
+				<include name="*.xml" />
+			</fileset>
+			<report format="frames" todir="${build.reports}" />
+		</junitreport>
+	</target>
+	<target name="testreport" depends="test,report" description="Runs unit tests and creates a report" />
+
+	<!-- ********************************************************* -->
+	<!-- Generate Help   										   -->
+	<!-- ********************************************************* -->
+	<property name="wikitext.standalone" location="${lib.build}/wikitext-standalone" />
+	<!-- path to wikitext standalone package -->
+	<path id="wikitext.classpath">
+		<fileset dir="${wikitext.standalone}">
+			<include name="org.eclipse.mylyn.wikitext.*core*.jar" />
+		</fileset>
+	</path>
+	<taskdef classpathref="wikitext.classpath" resource="org/eclipse/mylyn/wikitext/core/util/anttask/tasks.properties" />
+	<target name="generate-help" depends="init" description="Generate Eclipse help from textile source">
+		<wikitext-to-eclipse-help markupLanguage="Textile" multipleOutputFiles="true" navigationImages="true" helpPrefix="help">
+			<fileset dir="${help.src}">
+				<include name="*.textile" />
+			</fileset>
+			<stylesheet file="${help.src}/styles/main.css" />
+		</wikitext-to-eclipse-help>
+		<!-- hack for &#xd; xml trouble bug or so -->
+		<replace dir="${help.src}" includes="*.html">
+			<replacefilter token="&#xd;" value="" />
+		</replace>
+	</target>
+
+	<target name="generate-html" depends="init" description="Generate HTML from textile source">
+		<property name="html" location="${help.src}"/>
+
+		<wikitext-to-html markupLanguage="Textile">
+			<fileset dir="${html}">
+				<include name="*.textile" />
+			</fileset>
+			<stylesheet file="${html}\styles\main.css" />
+		</wikitext-to-html>
+		<sleep seconds="2"/>
+		<!-- hack for &#xd; xml trouble bug or so - not working -->
+		<replace dir="${html}" includes="*.html" >
+			<replacefilter token="&#xd;" value="" />
+		</replace>
+	</target>
+
+	<target name="generate-docbook" depends="init" description="Generate HTML from textile source">
+		<wikitext-to-docbook markupLanguage="Textile">
+			<fileset dir="${help.src}">
+				<include name="**/*.textile" />
+			</fileset>
+		</wikitext-to-docbook>
+	</target>
+
+	<target name="generate-pdf" description="Generate PDF from textile">
+		<wikitext-to-pdf markupLanguage="Textile">
+			<fileset dir="${help.src}">
+				<include name="**/*.textile" />
+			</fileset>
+		</wikitext-to-pdf>
+	</target>
+
+	<target name="include-help" depends="generate-help" description="include help to template folder">
+		<copy todir="${template.doc}" includeemptydirs="false">
+			<fileset dir="${help.src}" excludes="**/*.textile" />
+		</copy>
+	</target>
+
+
+
+	<!-- ********************************************************* -->
+	<!-- Pandoc tasks   										   -->
+	<!-- ********************************************************* -->
+	<!-- http://www.bit-101.com/blog/?cat=12 -->
+	<property name="inputFileNonUTF8" location="project/wiki/javaProjectAntGit.textile" />
+	<property name="inputFile" location="project/wiki/javaProjectAntGit.md" />
+	<property name="outputFile" value="project/wiki/javaProjectAntGit" />
+	<property name="pandoc" location="project/lib/Pandoc/pandoc.exe" />
+	<property name="css" location="project/thesis/main.css" />
+	<property name="title" value="Help ${application}" />
+	<property name="author" value="${builder}" />
+	<property name="cover" location="project/thesis/img/ica_book_figure_.png" />
+
+	<target name="to-UTF8">
+		<copy file="${inputFileNonUTF8}" encoding="cp1252" outputencoding="UTF-8" overwrite="true" tofile="${inputFile}" />
+	</target>
+
+	<target name="pandoc-markdown">
+		<exec executable="${pandoc}">
+			<arg line=" -t markdown  -s &quot;${inputFile}&quot; -o &quot;${outputFile}.md&quot;" />
+		</exec>
+	</target>
+
+	<target name="pandoc-docx">
+		<exec executable="${pandoc}">
+			<arg line=" -t docx  -s &quot;${inputFile}&quot; -o &quot;${outputFile}.docx&quot;" />
+		</exec>
+	</target>
+
+	<target name="pandoc-latex">
+		<exec executable="${pandoc}">
+			<arg line=" -t latex  -s &quot;${inputFile}&quot; -o &quot;${outputFile}.tex&quot;" />
+		</exec>
+	</target>
+
+
+	<target name="pandoc-html">
+		<exec executable="${pandoc}">
+			<arg line=" -t html5 -s --highlight-style pygments -S --toc --css &quot;${css}&quot; -i --mathjax --number-sections  &quot;${inputFile}&quot; -o &quot;${outputFile}.html&quot;" />
+		</exec>
+	</target>
+
+	<target name="pandoc-htmlslides">
+		<exec executable="${pandoc}" description="pandoc textile 2 markdown conversion via commandline">
+			<arg line=" -t slidy  -s --self-contained  &quot;${inputFile}&quot; -o &quot;${outputFile}.html&quot;" />
+		</exec>
+	</target>
+
+	<!-- http://johnmacfarlane.net/pandoc/epub.html -->
+	<target name="pandoc-epub-cover">
+		<property name="title" value="Help ${application}" />
+		<property name="author" value="${builder}" />
+		<echo file="${outputFile}-metadata.xml">
+			&lt;dc:title&gt;${title}&lt;/dc:title&gt;${line.separator}
+			&lt;dc:creator&gt;${author}&lt;/dc:creator&gt;${line.separator}		
+			&lt;dc:rights&gt;The copyright status of this e-book is ambiguous. &lt;/dc:rights&gt;${line.separator}
+			&lt;dc:language&gt;en-US&lt;/dc:language&gt;
+		</echo>
+		<exec executable="${pandoc}">
+			<arg line=" -S --toc -t epub --epub-metadata=&quot;${outputFile}-metadata.xml&quot; --epub-cover-image=&quot;${cover}&quot; -s &quot;${inputFile}&quot; -o &quot;${outputFile}.epub&quot;" />
+		</exec>
+		<delete file="${outputFile}-metadata.xml" />
+	</target>
+
+	<target name="pandoc-epub">
+		<property name="title" value="Help ${application}" />
+		<property name="author" value="${builder}" />
+		<echo file="${outputFile}-metadata.xml">
+			&lt;dc:title&gt;${title}&lt;/dc:title&gt;${line.separator}
+			&lt;dc:creator&gt;${author}&lt;/dc:creator&gt;${line.separator}		
+			&lt;dc:rights&gt;The copyright status of this e-book is ambiguous. &lt;/dc:rights&gt;${line.separator}
+			&lt;dc:language&gt;en-US&lt;/dc:language&gt;
+		</echo>
+		<exec executable="${pandoc}">
+			<arg line=" -S --toc -t epub --epub-metadata=&quot;${outputFile}-metadata.xml&quot;  -s &quot;${inputFile}&quot; -o &quot;${outputFile}.epub&quot;" />
+		</exec>
+		<delete file="${outputFile}-metadata.xml" />
+	</target>
+
+
+
+	<!-- Send email with ant and gmail -->
+	<!-- Ant Tasks Classloader: http://enitsys.sourceforge.net/ant-classloadertask/ ant-classloader.jar -->
+	<!-- Java mail: http://www.oracle.com/technetwork/java/javamail javamail1_4_6.zip - put mail.jar in your lib folder-->
+	<target name="mail-done">
+		<path id="ant-classpath">
+			<fileset dir="${lib.build}/ant" includes="**/*.jar" />
+		</path>
+		<taskdef name="classloadertask" classname="org.apache.tools.ant.taskdefs.ClassloaderTask" classpathref="ant-classpath" />
+		<classloadertask classpathRef="ant-classpath" loader="thread" />
+		<mail from="${gmail.user}" tolist="${email.to}" mailhost="smtp.gmail.com" mailport="465" ssl="true" user="${gmail.user}" password="${gmail.pw}" subject="${application} Test build" message="${application} test build has completed." />
+		<!--<attachments><fileset dir="${dist}"><include name="**/*.zip"/></fileset></attachments>-->
+	</target>
+	<!-- TODO email sening attachment doesn't work -->
+	<target name="mail-windows-zip">
+		<path id="ant-classpath">
+			<fileset dir="${lib.build}/ant" includes="**/*.jar" />
+		</path>
+		<taskdef name="classloadertask" classname="org.apache.tools.ant.taskdefs.ClassloaderTask" classpathref="ant-classpath" />
+		<classloadertask classpathRef="ant-classpath" loader="thread" />
+		<mail from="${gmail.user}" tolist="${email.to}" mailhost="smtp.gmail.com" mailport="465" ssl="true" user="${gmail.user}" password="${gmail.pw}" subject="Application: ${application} Version:${version}" message="Please find attached ${application} ${version} that has been successfully build. Created by ${builder}." />
+		<attachments>
+			<fileset dir="${dist}/windows">
+				<include name="**/*.txt" />
+			</fileset>
+		</attachments>
+	</target>
+</project>

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<project default="init" name="initializeProject">
+	<!-- property values  are stored in a separate properties file -->
+	<property file="build.properties" />
+
+
+	<target name="clean">
+		<delete dir="${build}" />
+		<delete dir="${dist}" />
+		<delete dir="${src}" />
+		<delete dir="${test}" />
+		<delete dir="${lib}" />
+		<delete dir="${resources}" />
+		<delete dir="${lib.build}" />
+		<delete dir="${help.src}" />
+	</target>
+	<target name="init" description="Creates the folder structure of the new project">
+		<mkdir dir="${src}" />
+		<mkdir dir="${test}" />
+		<mkdir dir="${lib}" />
+		<mkdir dir="${resources}" />
+		<mkdir dir="${template}" />
+		<mkdir dir="${lib.build}" />
+		<mkdir dir="${help.src}" />
+	</target>
+
+	<target name="hello-world" description="Create Hello World.java File">
+		<echo file="${src}/app/MyApp.java">
+			// Example Hello World
+			package app;
+			public class MyApp {
+			    public static void main(String[] args) {
+			        System.out.println("Hello, World");
+			    }
+			}
+		</echo>
+	</target>
+</project>
